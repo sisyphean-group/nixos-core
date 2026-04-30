@@ -44,6 +44,24 @@ mkTest {
 
       networking.hostId = "deadbeef";
     };
+
+    # VM with strict activation mode enabled: stage2 must fail when activate is
+    # absent. In a standard NixOS system the activate script is always present,
+    # so this node should boot successfully, which tells us that strict mode
+    # does not break a normal boot.
+    strictActivation = {
+      imports = [nixosModule testCommons];
+      system.nixos-core = {
+        enable = true;
+        strictActivation = true;
+      };
+      boot = {
+        loader.grub.enable = false;
+        initrd.systemd.enable = false;
+      };
+
+      networking.hostId = "00c0ffee";
+    };
   };
 
   testScript = ''
@@ -129,5 +147,17 @@ mkTest {
 
       # Entries from the new run are also present.
       lustrate.succeed("test -f /old-root/another-marker")
+
+    # With STAGE2_STRICT_ACTIVATION=true and an activate script present (normal
+    # NixOS), stage2 must not abort. If it did, the VM would never reach
+    # multi-user.target.
+    strictActivation.start()
+    strictActivation.wait_for_unit("multi-user.target")
+
+    with subtest("strict activation - boots normally when activate script is present"):
+      # Verify the option was threaded through to the stage-2 init script: the
+      # env var export must be present in the script that was actually used for
+      # this boot.
+      strictActivation.succeed("grep -q 'STAGE2_STRICT_ACTIVATION=true' $(readlink /run/current-system)/init")
   '';
 }
