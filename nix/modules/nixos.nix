@@ -6,7 +6,9 @@ self: {
 }: let
   inherit (lib.modules) mkIf mkForce;
   inherit (lib.options) mkOption mkEnableOption mkPackageOption literalExpression;
-  inherit (lib.types) package lines;
+  inherit (lib.types) package lines str;
+  inherit (lib.strings) optionalString escapeShellArg concatStringsSep;
+  inherit (lib.meta) getExe';
 
   # Keep the default package on the caller's pkgs, including cross stdenvs.
   pkgsWithOverlay = pkgs.extend self.overlays.nixos-core;
@@ -68,25 +70,30 @@ self: {
       cp -v ${pkgs.lvm2}/lib/udev/rules.d/*.rules $out/
       ${config.boot.initrd.extraUdevRulesCommands}
 
-      for i in $out/*.rules; do
-          substituteInPlace $i \
-            --replace ata_id   ${extra-utils}/bin/ata_id \
-            --replace scsi_id  ${extra-utils}/bin/scsi_id \
-            --replace cdrom_id ${extra-utils}/bin/cdrom_id \
-            --replace ${pkgs.coreutils}/bin/basename ${extra-utils}/bin/basename \
-            --replace ${pkgs.util-linux}/bin/blkid   ${extra-utils}/bin/blkid \
-            --replace ${lib.getBin pkgs.lvm2}/bin     ${extra-utils}/bin \
-            --replace ${pkgs.mdadm}/sbin              ${extra-utils}/sbin \
-            --replace ${pkgs.bash}/bin/sh             ${extra-utils}/bin/sh \
-            --replace ${udev}                         ${extra-utils}
+      for i in "$out"/*.rules; do
+        # XXX: --replace in 'substituteInPlace' has been deprecated and should be
+        # replaced with --replace-fail and the such. Since those paths are not
+        # guaranteed to exist, --replace-warn trades the verbosity of warnings
+        # from --replace with explicit warning messages stating what is missing.
+        # This is the cleanest solution I can think of.
+        substituteInPlace "$i" \
+          --replace-warn ata_id ${extra-utils}/bin/ata_id \
+          --replace-warn scsi_id ${extra-utils}/bin/scsi_id \
+          --replace-warn cdrom_id ${extra-utils}/bin/cdrom_id \
+          --replace-warn ${getExe' pkgs.coreutils "basename"} ${extra-utils}/bin/basename \
+          --replace-warn ${getExe' pkgs.util-linux "blkid"} ${extra-utils}/bin/blkid \
+          --replace-warn ${getExe' pkgs.mdadm "mdadm"} ${extra-utils}/sbin \
+          --replace-warn ${getExe' pkgs.bash "sh"} ${extra-utils}/bin/sh \
+          --replace-warn ${lib.getBin pkgs.lvm2}/bin ${extra-utils}/bin \
+          --replace-warn ${udev} ${extra-utils}
       done
-      substituteInPlace $out/60-persistent-storage.rules \
-        --replace ID_CDROM_MEDIA_TRACK_COUNT_DATA ID_CDROM_MEDIA
+
+      substituteInPlace "$out"/60-persistent-storage.rules \
+        --replace-warn ID_CDROM_MEDIA_TRACK_COUNT_DATA ID_CDROM_MEDIA
     '';
 
   # Use the topologically-sorted list from nixpkgs, not raw attrValues.
   fileSystems = lib.filter fsNeededForBoot config.system.build.fileSystems;
-
   fsInfo = pkgs.writeText "initrd-fsinfo" (lib.concatStringsSep "\n" (lib.concatMap (fs: [
       fs.mountPoint
       (
@@ -119,7 +126,6 @@ self: {
   postDeviceCommandsFile = pkgs.writeText "post-device-commands" config.boot.initrd.postDeviceCommands;
   postResumeCommandsFile = pkgs.writeText "post-resume-commands" config.boot.initrd.postResumeCommands;
   postMountCommandsFile = pkgs.writeText "post-mount-commands" config.boot.initrd.postMountCommands;
-
   postBootCommandsFile = pkgs.writeText "post-boot-commands" ''
     ${config.boot.postBootCommands}
     ${config.powerManagement.powerUpCommands}
@@ -131,9 +137,9 @@ self: {
     text = ''
       #!${extra-utils}/bin/ash
       export extraUtils=${extra-utils}
-      export kernelModules=${lib.escapeShellArg (lib.concatStringsSep " " config.boot.initrd.kernelModules)}
-      export resumeDevice=${lib.escapeShellArg config.boot.resumeDevice}
-      export resumeDevices=${lib.escapeShellArg resumeDevicesList}
+      export kernelModules=${escapeShellArg (concatStringsSep " " config.boot.initrd.kernelModules)}
+      export resumeDevice=${escapeShellArg config.boot.resumeDevice}
+      export resumeDevices=${escapeShellArg resumeDevicesList}
       export fsInfo=${fsInfo}
       export earlyMountScript=${config.system.build.earlyMountScript}
       export udevRules=${udevRules}
@@ -143,15 +149,15 @@ self: {
         then "1"
         else "0"
       }
-      export distroName=${lib.escapeShellArg config.system.nixos.distroName}
+      export distroName=${escapeShellArg config.system.nixos.distroName}
       export preFailCommands=${preFailCommandsFile}
       export preDeviceCommands=${preDeviceCommandsFile}
       export preLVMCommands=${preLVMCommandsFile}
       export postDeviceCommands=${postDeviceCommandsFile}
       export postResumeCommands=${postResumeCommandsFile}
       export postMountCommands=${postMountCommandsFile}
-      ${lib.optionalString (config.networking.hostId != null) ''
-        export HOST_ID=${lib.escapeShellArg config.networking.hostId}
+      ${optionalString (config.networking.hostId != null) ''
+        export HOST_ID=${escapeShellArg config.networking.hostId}
       ''}
 
       export DEVICE_MANAGER=udev
@@ -171,25 +177,26 @@ self: {
     text = ''
       #!${pkgs.bash}/bin/bash
       export SYSTEM_CONFIG=@systemConfig@
-      export NIX_STORE_MOUNT_OPTS=${lib.escapeShellArg (lib.concatStringsSep "," config.boot.nixStoreMountOpts)}
-      export SYSTEMD_EXECUTABLE=${lib.escapeShellArg config.boot.systemdExecutable}
-      export STAGE2_PATH=${lib.escapeShellArg (lib.makeBinPath ([pkgs.coreutils pkgs.util-linux] ++ lib.optional useHostResolvConf pkgs.openresolv))}
+      export NIX_STORE_MOUNT_OPTS=${escapeShellArg (concatStringsSep "," config.boot.nixStoreMountOpts)}
+      export SYSTEMD_EXECUTABLE=${escapeShellArg config.boot.systemdExecutable}
+      export STAGE2_PATH=${escapeShellArg (lib.makeBinPath ([pkgs.coreutils pkgs.util-linux] ++ lib.optional useHostResolvConf pkgs.openresolv))}
       export POST_BOOT_COMMANDS=${postBootCommandsFile}
-      export POST_BOOT_SHELL=${pkgs.bash}/bin/bash
+      export POST_BOOT_SHELL=${getExe' pkgs.bash "bash"}
       export EARLY_MOUNT_SCRIPT=${config.system.build.earlyMountScript}
       export USE_HOST_RESOLV_CONF=${
         if useHostResolvConf
         then "true"
         else "false"
       }
-      export STAGE2_GREETING=${lib.escapeShellArg "<<< ${config.system.nixos.distroName} Stage 2 >>>"}
-      ${lib.optionalString cfg.components.nixosInitCompat.enable ''
-        export FIRMWARE_PATH=${lib.escapeShellArg "${config.hardware.firmware}/lib/firmware"}
-        export MODPROBE_BINARY=${lib.escapeShellArg "${pkgs.kmod}/bin/modprobe"}
-        export ENV_BINARY=${lib.escapeShellArg config.environment.usrbinenv}
-        export SH_BINARY=${lib.escapeShellArg config.environment.binsh}
+      export STAGE2_GREETING=${escapeShellArg "<<< ${config.system.nixos.distroName} Stage 2 >>>"}
+      ${optionalString cfg.strictActivation "export STAGE2_STRICT_ACTIVATION=true"}
+      ${optionalString cfg.components.nixosInitCompat.enable ''
+        export FIRMWARE_PATH=${escapeShellArg "${config.hardware.firmware}/lib/firmware"}
+        export MODPROBE_BINARY=${escapeShellArg "${getExe' pkgs.kmod "modprobe"}"}
+        export ENV_BINARY=${escapeShellArg config.environment.usrbinenv}
+        export SH_BINARY=${escapeShellArg config.environment.binsh}
       ''}
-      exec ${cfg.package}/bin/stage-2-init${lib.optionalString cfg.components.nixosInitCompat.enable " --setup-firmware --setup-modprobe --setup-fhs --create-current-system"}
+      exec ${cfg.package}/bin/stage-2-init${optionalString cfg.components.nixosInitCompat.enable " --setup-firmware --setup-modprobe --setup-fhs --create-current-system"}
     '';
   };
 
@@ -272,11 +279,22 @@ in {
   options.system.nixos-core = {
     enable = mkEnableOption "nixos-core multi-call binary";
     package = mkPackageOption pkgsWithOverlay "nixos-core" {
-      pkgsText = "pkgs.extend nixos-core.overlays.nixos-core";
+      pkgsText = literalExpression "pkgs.extend nixos-core.overlays.nixos-core";
+    };
+
+    strictActivation = mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether to fail stage 2 when {file}`$systemConfig/activate` is missing,
+        instead of silently skipping activation. This corresponds to the
+        `--strict-activation` CLI flag / {env}`STAGE2_STRICT_ACTIVATION` environment
+        variable of `stage-2-init`.
+      '';
     };
 
     stateDir = mkOption {
-      type = lib.types.str;
+      type = str;
       default = "/var/lib/nixos";
       example = "/run/nixos";
       description = ''
@@ -320,7 +338,7 @@ in {
         package = mkOption {
           type = package;
           default = bootStage1;
-          description = "";
+          description = "The stage-1 init script package used as {file}`/init` inside the initrd.";
           readOnly = true; # we can't handle a modified package
         };
       };
@@ -337,7 +355,7 @@ in {
               Under a systemd initrd, nixpkgs' `initrd-nixos-activation.service`
               calls the resulting `prepare-root` via `chroot /sysroot`.
 
-              `stage-2-init` detects `IN_NIXOS_SYSTEMD_STAGE1=true` and exits
+              `stage-2-init` detects {env}`IN_NIXOS_SYSTEMD_STAGE1=true` and exits
               after activation instead of `exec`-ing systemd.
             '';
           };
@@ -345,7 +363,7 @@ in {
         package = mkOption {
           type = package;
           default = bootStage2;
-          description = "";
+          description = "The stage-2 init script package used as {option}`system.build.bootStage2`.";
           readOnly = true;
         };
       };
@@ -357,16 +375,15 @@ in {
             default = !config.boot.initrd.systemd.enable;
             defaultText = literalExpression "!config.boot.initrd.systemd.enable";
             description = ''
-              Whether to override {optiion}`system.build.initialRamdisk` with
-
-
+              Whether to override {option}`system.build.initialRamdisk` with
+              nixos-core's initrd, which embeds the stage-1 wrapper as {file}`/init`.
             '';
           };
 
         package = mkOption {
           type = package;
           default = initialRamdisk;
-          description = "";
+          description = "The initrd package used as {option}`system.build.initialRamdisk`.";
           readOnly = true; # we can't handle a modified package
         };
       };
@@ -382,8 +399,8 @@ in {
 
         package = mkOption {
           type = package;
-          default = "${lib.getExe' cfg.package "init-script-builder"}";
-          defaultText = literalExpression "${lib.getExe' cfg.package "init-script-builder"}";
+          default = "${getExe' cfg.package "init-script-builder"}";
+          defaultText = literalExpression "$${getExe' cfg.package \"init-script-builder\"}";
           description = "The bootloader installer package to use";
         };
       };
@@ -401,8 +418,8 @@ in {
           type = lines;
           default = ''
             echo "setting up /etc..."
-            export NIXOS_CORE_STATE_DIR=${lib.escapeShellArg cfg.stateDir}
-            ${lib.getExe' cfg.package "setup-etc"} ${config.system.build.etc}/etc
+            export NIXOS_CORE_STATE_DIR=${escapeShellArg cfg.stateDir}
+            ${getExe' cfg.package "setup-etc"} ${config.system.build.etc}/etc
           '';
           description = "Script contents passed to {option}`system.build.etcActivationCommands`";
         };
@@ -422,8 +439,8 @@ in {
           default = ''
             install -m 0700 -d /root
             install -m 0755 -d /home
-            export NIXOS_CORE_STATE_DIR=${lib.escapeShellArg cfg.stateDir}
-            ${lib.getExe' cfg.package "update-users-groups"} ${usersSpec}
+            export NIXOS_CORE_STATE_DIR=${escapeShellArg cfg.stateDir}
+            ${getExe' cfg.package "update-users-groups"} ${usersSpec}
           '';
           description = "Script contents passed to the user activation script";
         };
@@ -451,7 +468,7 @@ in {
     # and override bootStage1/initialRamdisk with our wrapper.
     # With the systemd initrd stage-1 is handled by systemd; these don't apply.
     boot.initrd.extraUtilsCommands = mkIf cfg.components.extraUtilsCommand.enable ''
-      copy_bin_and_libs ${lib.getExe' cfg.package "nixos-core"}
+      copy_bin_and_libs ${getExe' cfg.package "nixos-core"}
     '';
 
     system = {
