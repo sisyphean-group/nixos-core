@@ -1605,13 +1605,25 @@ fn mount_root(
     .or(fsinfo_fstype)
     .unwrap_or_else(|| "auto".to_string());
 
-  // Parse mount options
+  // Build mount options: rootflags= from the cmdline (an operator override the
+  // shell does not support), then merge options from the fsInfo record for /.
+  // Exact-duplicate options are skipped; for same-key conflicts (e.g. two
+  // subvol= entries) the kernel uses the last one, which is the fsInfo value.
+  // The bcachefs path above applies the same merge.
   let mut mount_opts: Vec<String> = cmdline
     .get("rootflags")
     .map(|s| s.split(',').map(String::from).collect())
     .unwrap_or_default();
 
-  // Default to rw if not specified
+  if let Some(e) = fsinfo_root {
+    for opt in &e.options {
+      if !mount_opts.contains(opt) {
+        mount_opts.push(opt.clone());
+      }
+    }
+  }
+
+  // Default to rw if neither ro nor rw was supplied by cmdline or fsInfo.
   if !mount_opts.iter().any(|o| o == "ro" || o == "rw") {
     mount_opts.push("rw".to_string());
   }
