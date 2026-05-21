@@ -989,6 +989,19 @@ fn is_mounted(path: &Path) -> bool {
   false
 }
 
+fn is_device_mounted(device: &str) -> bool {
+  if let Ok(file) = File::open("/proc/mounts") {
+    let reader = BufReader::new(file);
+    for line in reader.lines().map_while(Result::ok) {
+      let parts: Vec<&str> = line.split_whitespace().collect();
+      if parts.len() >= 2 && parts[0] == device {
+        return true;
+      }
+    }
+  }
+  false
+}
+
 // Wait up to timeout_secs for device to appear; re-triggers the device manager
 // periodically.
 fn wait_for_device(
@@ -1263,6 +1276,13 @@ fn needs_fsck(fstype: &str, check_journaling: bool) -> bool {
 }
 
 fn run_fsck(device: &str, fstype: &str, _options: &[String]) -> Result<bool> {
+  // Device might be already mounted manually, e.g. NBD-device or the host
+  // filesystem of the file which contains encrypted root fs.
+  if is_device_mounted(device) {
+    log_message(&format!("skip checking already mounted {device}"), true);
+    return Ok(true);
+  }
+
   log_message(&format!("Checking {fstype} filesystem on {device}"), true);
 
   // Skip non-block devices. Matches bash `[ ! -b "$device" ] && continue`:
@@ -2610,6 +2630,9 @@ pub fn run(args: &[String]) -> Result<()> {
   handle_lustrate(&config.target_root).context("Failed to handle lustrate")?;
 
   for fs_info in &fs_infos {
+    if fs_info.mountpoint == Path::new("/") {
+      continue;
+    }
     if needs_fsck(&fs_info.fstype, config.check_journaling_fs)
       && let Err(e) =
         run_fsck(&fs_info.device, &fs_info.fstype, &fs_info.options)
