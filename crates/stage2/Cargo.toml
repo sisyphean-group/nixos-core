@@ -1,11 +1,12 @@
 [package]
 name                   = "stage2"
+description            = "NixOS stage 2 initialization"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
-description            = "NixOS stage 2 initialization"
+readme                 = "./README.md"
 
 [features]
 bootspec               = [ "dep:serde", "dep:serde_json" ]

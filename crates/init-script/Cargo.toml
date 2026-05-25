@@ -1,11 +1,12 @@
 [package]
 name                   = "init-script"
+description            = "NixOS generic init script builder"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
-description            = "NixOS generic init script builder"
+readme                 = "./README.md"
 
 [dependencies]
 anyhow.workspace = true

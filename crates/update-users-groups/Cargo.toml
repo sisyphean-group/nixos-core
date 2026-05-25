@@ -1,11 +1,12 @@
 [package]
 name                   = "update-users-groups"
+description            = "NixOS user and group management"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
-description            = "NixOS user and group management"
+readme                 = "./README.md"
 
 [dependencies]
 anyhow.workspace     = true

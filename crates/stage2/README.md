@@ -1,169 +1,91 @@
-# Stage 2 - NixOS Stage 2 Initialization
+# Stage 2 activation and handoff
 
-A Rust implementation of the NixOS stage 2 initialization process, providing a
-bash-compatible replacement for `stage-2-init.sh` with optional improvements
-borrowed from `nixos-init`.
+The `stage2` crate, exposed as `nixos-core stage-2-init`, or `stage-2-init`
+directly when symlinked from the `nixos-core` binary, replaces the upstream
+`stage-2-init.sh` script used to finish activation and hand off to systemd.
 
-## Philosophy
+Default behavior is intentionally bash-compatible. Additional behavior borrowed
+from `nixos-init` exists, but is opt-in through command-line flags and, where
+needed, compile-time features.
 
-This crate has been designed to **match the behaviour of the Bash script
-exactly**. Any feature borrowed from `nixos-init` are completely **opt-in** and
-must be explicitly enabled through command-line flags or compile-time features.
+## How it works
 
-## Features
+Stage 2 reads most configuration from CLI flags with environment bindings. The
+required input is the system configuration path (`--system-config` /
+`SYSTEM_CONFIG`). Other core inputs include the greeting, `/nix/store` mount
+options, systemd executable path, post-boot hook path, post-boot shell, early
+mount script path, PATH value, host `resolv.conf` behavior, and strict
+activation behavior.
 
-### Default Behavior
+The bash-compatible path remounts `/` read-write when applicable, mounts the
+special filesystems (`/proc`, `/dev`, `/sys`, `/dev/pts`, `/dev/shm`) or runs
+the Nix-generated early mount script, prepares `/nix/store`, creates required
+runtime directories, runs the system activation script, creates
+`/run/booted-system`, and runs post-boot commands when configured.
 
-When run without any opt-in flags, this tool behaves identically to the original
-`stage-2-init.sh`:
+After core activation, optional compatibility toggles can apply extra setup:
+atomic recreation of `/run/booted-system`, creation of `/run/current-system`,
+FHS links (`/usr/bin/env`, `/bin/sh`), `/proc/sys/kernel/modprobe`, and firmware
+search path setup.
 
-- Reads configuration from environment variables
-- Mounts special filesystems (`/proc`, `/dev`, `/sys`, `/dev/pts`, `/dev/shm`)
-- Sets up `/nix/store` permissions (1775, root:nixbld)
-- Applies `/nix/store` mount options (ro, nosuid, nodev)
-- Creates required directories (`/etc`, `/etc/nixos`, `/tmp`, `/run/keys`)
-- Runs the activation script (`$systemConfig/activate`)
-- Creates `/run/booted-system` symlink
-- Runs post-boot commands if provided
-- Hands off to systemd via raw `execv`
+`run()` performs activation/setup only. `run_and_handoff()` performs activation
+and then transfers control to the init path. In the normal path, handoff is a
+raw exec of the configured systemd executable. When
+`IN_NIXOS_SYSTEMD_STAGE1=true`, stage2 exits cleanly instead, because the
+systemd initrd switch-root unit owns the final transition.
 
-### Opt-In Improvements from nixos-init
+## Compile-time features
 
-The following features can be enabled individually to improve safety and
-robustness in specific scenarios:
+The crate has no optional default features.
 
-#### `--atomic-symlinks`
+- `bootspec`: enables `--use-bootspec` and `--bootspec-path`. At the moment,
+  bootspec parsing is informational unless paired with other opt-in behavior.
+- `systemd-integration`: enables `--use-systemctl-handoff`.
+- `full-nixos-init-compat`: enables both `bootspec` and `systemd-integration`.
 
-Uses retry-based atomic symlinks (`.tmp0`, `.tmp1`, ... pattern) when creating
-or replacing symlinks. This prevents race conditions when multiple processes
-might be manipulating the same symlink.
+If `--use-systemctl-handoff` is requested and compiled in, stage2 tries
+`systemctl switch-root` before falling back to raw exec on failure.
 
-#### `--create-current-system`
+## Runtime options
 
-Creates `/run/current-system` symlink in addition to `/run/booted-system`. This
-matches `nixos-init` behavior and ensures proper GC roots from the start.
+Core options:
 
-#### `--setup-fhs`
+- `--system-config` / `SYSTEM_CONFIG`
+- `--greeting` / `STAGE2_GREETING`
+- `--nix-store-mount-opts` / `NIX_STORE_MOUNT_OPTS`
+- `--systemd-executable` / `SYSTEMD_EXECUTABLE`
+- `--post-boot-commands` / `POST_BOOT_COMMANDS`
+- `--post-boot-shell` / `POST_BOOT_SHELL`
+- `--early-mount-script` / `EARLY_MOUNT_SCRIPT`
+- `--use-host-resolv-conf` / `USE_HOST_RESOLV_CONF`
+- `--path` / `STAGE2_PATH`
+- `--strict-activation` / `STAGE2_STRICT_ACTIVATION`
 
-Sets up `/usr/bin/env` and `/bin/sh` symlinks atomically.
+Opt-in compatibility options:
 
-Normally handled by activation scripts (`usrbinenv`, `binsh`), but this flag
-allows stage-2 to set them up directly if running in an environment without
-activation script support.
+- `--atomic-symlinks`
+- `--create-current-system`
+- `--setup-fhs` with `--env-binary` and `--sh-binary`
+- `--setup-modprobe` with `--modprobe-binary`
+- `--setup-firmware` with `--firmware-path`
 
-Requires `--env-binary` and `--sh-binary` to specify the target paths.
+Trailing arguments are passed through unchanged to systemd, matching the old
+script's `exec systemd "$@"` behavior.
 
-#### `--setup-modprobe`
+## Differences from nixos-init
 
-Configures `/proc/sys/kernel/modprobe` to point to the wrapped modprobe binary.
+`nixos-init` uses bootspec and systemctl-based switch-root as first-class
+behavior. This crate keeps the scripted-init contract as the baseline because
+that is still useful for non-systemd initrd users and for gradual replacement of
+the legacy scripts. The **nixos-init-style pieces are available** where they
+make sense, but they do not silently change the default activation path.
 
-Normally handled by the `modprobe` activation script. This flag allows stage-2
-to configure it directly.
+## Failure semantics
 
-#### `--setup-firmware`
+Missing activation script is a warning by default so non-NixOS or partial
+targets can still complete stage 2. With `--strict-activation`, a missing
+`$systemConfig/activate` is fatal.
 
-Configures the kernel firmware search path
-(`/sys/module/firmware_class/parameters/path`).
-
-Normally handled by activation scripts or initrd setup. This flag allows stage-2
-to configure it directly.
-
-#### `--use-systemctl-handoff` (requires `systemd-integration` feature)
-
-Uses `systemctl switch-root` instead of raw `execv` for the systemd handoff.
-
-This is the `nixos-init` approach. It ensures a cleaner transition and lets
-Systemd handle mount propagation and service state correctly.
-
-If `systemctl switch-root` fails, falls back to raw `execv`.
-
-#### `--use-bootspec` (requires `bootspec` feature)
-
-Reads configuration from `boot.json` (bootspec) instead of relying solely on
-environment variables.
-
-> [!NOTE]
-> Currently informational only. All actual behavior still follows the bash
-> script unless additional opt-in flags are set.
-
-## Usage
-
-### Basic Usage
-
-```bash
-stage-2-init --system-config /nix/store/...-nixos-system
-```
-
-### With `nixos-init` Compatibiltiy
-
-```bash
-stage-2-init \
-  --system-config /nix/store/...-nixos-system \
-  --atomic-symlinks \
-  --create-current-system \
-  --setup-fhs \
-  --env-binary /run/current-system/sw/bin/env \
-  --sh-binary /run/current-system/sw/bin/sh \
-  --setup-modprobe \
-  --setup-firmware
-```
-
-### Environment Variables
-
-All options can also be set via environment variables:
-
-- `SYSTEM_CONFIG` - Path to system configuration
-- `STAGE2_GREETING` - Greeting message (default: "<<< NixOS Stage 2 >>>")
-- `NIX_STORE_MOUNT_OPTS` - Comma-separated mount options for /nix/store
-- `SYSTEMD_EXECUTABLE` - Path to systemd binary
-- `POST_BOOT_COMMANDS` - Path to post-boot commands script
-- `USE_HOST_RESOLV_CONF` - Use host resolv.conf (set to any value)
-- `STAGE2_PATH` - PATH to set (default: "/run/current-system/sw/bin")
-- `MODPROBE_BINARY` - Path to modprobe binary
-- `FIRMWARE_PATH` - Path to firmware directory
-- `ENV_BINARY` - Path to env binary (for --setup-fhs)
-- `SH_BINARY` - Path to sh binary (for --setup-fhs)
-
-## Compile-Time Features
-
-- `bootspec` - Enables `--use-bootspec` flag for bootspec JSON parsing
-- `systemd-integration` - Enables `--use-systemctl-handoff` for systemctl
-  switch-root
-- `full-nixos-init-compat` - Enables all nixos-init compatibility features
-
-To stay true to the original scripted init behaviour, no compile-time features
-are enabled by default. As `nixos-core` is designed to be functional on
-non-Systemd distributions, this feature set will not change even after Nixpkgs
-deprecated scripted initrd support.
-
-## Comparison with nixos-init
-
-<!--markdownlint-disable MD013-->
-
-| Feature            | nixos-init            | stage2 (default)  | stage2 (opt-in)     |
-| ------------------ | --------------------- | ----------------- | ------------------- |
-| Config source      | bootspec JSON         | Env vars          | Env vars + bootspec |
-| Symlink creation   | Atomic retry          | Simple            | Atomic retry        |
-| FHS setup          | Built-in              | Activation script | Built-in            |
-| Modprobe           | Built-in              | Activation script | Built-in            |
-| Firmware           | Built-in              | Activation script | Built-in            |
-| current-system     | Yes                   | No                | Yes                 |
-| Handoff            | systemctl switch-root | execv             | Both available      |
-| Systemd dependency | Required (initrd)     | None              | None                |
-
-<!--markdownlint-enable MD013-->
-
-## Rationale
-
-Nixpkgs, and consequently NixOS, is moving toward `nixos-init` for systemd-based
-systems, but there are valid reasons to maintain bash-compatible stage 2
-initialization:
-
-1. **Non-systemd initrd support** - Scripted initrd is still the default
-2. **Gradual migration** - Systems can adopt Rust components incrementally
-3. **Backward compatibility** - Existing configurations continue to work
-4. **Flexibility** - Users can choose the right level of sophistication and
-   prefer an option that is not constrained by Nixpkgs
-
-This implementation provides a bridge: it maintains bash compatibility by
-default while offering opt-in improvements for users who need them.
+`/nix/store` ownership and mount option setup attempts to preserve the old
+script's behavior while tolerating read-only or 9p-mounted stores in VM-like
+environments where those operations may fail.

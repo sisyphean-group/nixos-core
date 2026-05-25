@@ -1,11 +1,12 @@
 [package]
 name                   = "activation-common"
+description            = "Common utilities for NixOS activation scripts"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
-description            = "Common utilities for NixOS activation scripts"
+readme                 = "./README.md"
 
 [dependencies]
 anyhow.workspace = true

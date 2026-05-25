@@ -1,23 +1,24 @@
 [package]
 name                   = "setup-etc"
+description            = "NixOS /etc static setup"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
-description            = "NixOS /etc static setup"
+readme                 = "./README.md"
 
 [lib]
 name = "setup_etc"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow.workspace    = true
-clap.workspace      = true
-libc.workspace      = true
-log.workspace       = true
+anyhow.workspace     = true
+clap.workspace       = true
+libc.workspace       = true
+log.workspace        = true
 serde_json.workspace = true
-smfh-core.workspace = true
+smfh-core.workspace  = true
 
 [dev-dependencies]
 tempfile.workspace = true
