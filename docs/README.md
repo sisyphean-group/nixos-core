@@ -197,4 +197,11 @@ some subtests that verify that your code works exactly as expected.
 
 ## License
 
-This project is made available under the MIT license, following NixOS/Nixpkgs.
+[provided here]: https://www.mozilla.org/en-US/MPL/2.0/
+
+This project is derived from Nixpkgs, originally licensed under the MIT License.
+Original copyright and MIT license text are preserved in `licenses/MIT.txt`
+located in the repository root. This project and all project code/documentation
+are distributed under the **Mozilla Public License (MPL) version 2.0**. See
+[LICENSE](LICENSE) for more details on the exact conditions. An online copy is
+[provided here].
