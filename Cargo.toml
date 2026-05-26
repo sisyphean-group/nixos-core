@@ -7,16 +7,16 @@ edition      = "2024"
 license      = "MPL-2.0"
 repository   = "https://github.com/feel-co/nixos-core"
 rust-version = "1.94.0"
-version      = "0.1.0"
+version      = "1.0.0"
 
 [workspace.dependencies]
 # Internal components
-activation-common   = { path = "./crates/activation-common", version = "0.1.0" }
-init-script         = { path = "./crates/init-script", version = "0.1.0" }
-setup-etc           = { path = "./crates/setup-etc", version = "0.1.0" }
-stage1              = { path = "./crates/stage1", version = "0.1.0" }
-stage2              = { path = "./crates/stage2", version = "0.1.0" }
-update-users-groups = { path = "./crates/update-users-groups", version = "0.1.0" }
+activation-common   = { path = "./crates/activation-common", version = "1.0.0" }
+init-script         = { path = "./crates/init-script", version = "1.0.0" }
+setup-etc           = { path = "./crates/setup-etc", version = "1.0.0" }
+stage1              = { path = "./crates/stage1", version = "1.0.0" }
+stage2              = { path = "./crates/stage2", version = "1.0.0" }
+update-users-groups = { path = "./crates/update-users-groups", version = "1.0.0" }
 
 anyhow = "1.0.102"
 clap = { version = "4.6.1", default-features = false, features = [
