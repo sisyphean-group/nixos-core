@@ -26,7 +26,7 @@
 </div>
 
 <div align="center">
-    nixos-core` is a multi-call binary implementing core NixOS system utilities in
+    <code>nixos-core</code> is a multi-call binary implementing core NixOS system utilities in
     safe, portable Rust, replacing some of the Perl, Bash and Python scripts that
     are generally load-bearing for safety and performance. While some of those
     scripts _can_ be replaced through various means (such as the Perlless and
@@ -89,7 +89,7 @@ general overview of what can currently be replaced:
 
 While the project is rather new, base rewrites are complete and mostly verified
 through VM tests and even in real systems. If you're interested in testing
-`nixos-core` on your system, but are sceptical, you may be interested in
+`nixos-core` on your system, but are skeptical, you may be interested in
 enabling it gradually through the NixOS module knobs and test each individual
 component. As it stands, `nixos-core` does not change anything that can "brick"
 your system, i.e., you can easily roll back a generation in case something goes
