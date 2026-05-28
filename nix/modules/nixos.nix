@@ -11,7 +11,7 @@ self: {
   inherit (lib.meta) getExe';
 
   # Keep the default package on the caller's pkgs, including cross stdenvs.
-  pkgsWithOverlay = pkgs.extend self.overlays.nixos-core;
+  customPackages = self.packages.${pkgs.stdenv.hostPlatform.system};
 
   udev = config.systemd.package;
   extra-utils = config.system.build.extraUtils;
@@ -278,8 +278,8 @@ self: {
 in {
   options.system.nixos-core = {
     enable = mkEnableOption "nixos-core multi-call binary";
-    package = mkPackageOption pkgsWithOverlay "nixos-core" {
-      pkgsText = literalExpression "pkgs.extend nixos-core.overlays.nixos-core";
+    package = mkPackageOption customPackages "nixos-core" {
+      pkgsText = literalExpression "nixos-core.packages.\${system}";
     };
 
     strictActivation = mkOption {

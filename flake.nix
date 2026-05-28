@@ -7,7 +7,7 @@
   }: let
     inherit (nixpkgs.lib) genAttrs systems;
     forEachSystem = genAttrs systems.doubles.linux;
-    pkgsForEach = system: import nixpkgs { inherit system; };
+    pkgsForEach = system: nixpkgs.legacyPackages.${system};
 
     # Build system -> matching pkgsCross musl target.
     # powerpc-linux is omitted because packages.powerpc-linux is unevaluatable.
@@ -27,7 +27,7 @@
 
     overlays = {
       nixos-core = final: _prev: {
-        nixos-core = final.callPackage ./nix/package.nix {};
+        nixos-core = self.packages.${final.stdenv.hostPlatform.system}.nixos-core;
       };
       default = self.overlays.nixos-core;
     };
@@ -42,11 +42,11 @@
       muslAttr = muslCrossAttr.${system} or null;
     in
       {
-        inherit (pkgs.extend self.overlays.default) nixos-core;
+        nixos-core = pkgs.callPackage ./nix/package.nix {};
         default = self.packages.${system}.nixos-core;
       }
       // nixpkgs.lib.optionalAttrs (muslAttr != null) {
-        nixos-core-musl = (pkgs.pkgsCross.${muslAttr}.extend self.overlays.default).nixos-core;
+        nixos-core-musl = pkgs.pkgsCross.${muslAttr}.callPackage ./nix/package.nix {};
       });
 
     devShells = forEachSystem (system: {
