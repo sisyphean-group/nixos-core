@@ -169,6 +169,9 @@ self: {
     '';
   };
 
+  nixosInitCompat = cfg.components.nixosInitCompat.enable;
+  nixosInitCompatFlags = optionalString nixosInitCompat " --setup-fhs --create-current-system";
+
   # top-level.nix does `substituteInPlace $out/init --subst-var-by systemConfig $out`
   # after copying bootStage2, so @systemConfig@ must be a literal string here.
   bootStage2 = pkgs.writeTextFile {
@@ -190,13 +193,11 @@ self: {
       }
       export STAGE2_GREETING=${escapeShellArg "<<< ${config.system.nixos.distroName} Stage 2 >>>"}
       ${optionalString cfg.strictActivation "export STAGE2_STRICT_ACTIVATION=true"}
-      ${optionalString cfg.components.nixosInitCompat.enable ''
-        export FIRMWARE_PATH=${escapeShellArg "${config.hardware.firmware}/lib/firmware"}
-        export MODPROBE_BINARY=${escapeShellArg "${getExe' pkgs.kmod "modprobe"}"}
+      ${optionalString nixosInitCompat ''
         export ENV_BINARY=${escapeShellArg config.environment.usrbinenv}
         export SH_BINARY=${escapeShellArg config.environment.binsh}
       ''}
-      exec ${cfg.package}/bin/stage-2-init${optionalString cfg.components.nixosInitCompat.enable " --setup-firmware --setup-modprobe --setup-fhs --create-current-system"}
+      exec ${cfg.package}/bin/stage-2-init${nixosInitCompatFlags}
     '';
   };
 
