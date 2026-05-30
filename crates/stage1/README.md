@@ -26,10 +26,11 @@ Common environment inputs include `targetRoot`, `extraUtils`, `kernelModules`,
 `preDeviceCommands`/`postMountCommands`, `earlyMountScript`, `HOST_ID`,
 `checkJournalingFS`, and `distroName`.
 
-Device management defaults to udev. It can be switched to Busybox mdev with
-`DEVICE_MANAGER=mdev`. Backend binary paths can be overridden with
-`UDEV_BINARY`, `UDEVADM_BINARY`, `MDEV_BINARY`, and `MDEV_CONF`; udev rules can
-be provided with `udevRules`.
+Device management defaults to udev. It can be switched to BusyBox mdev with
+`DEVICE_MANAGER=mdev`, or to mdevd with `DEVICE_MANAGER=mdevd`. Backend binary
+paths can be overridden with `UDEV_BINARY`, `UDEVADM_BINARY`, `MDEV_BINARY`,
+`MDEVD_BINARY`, `MDEVD_COLDPLUG_BINARY`, and `MDEV_CONF`; udev rules can be
+provided with `udevRules`.
 
 Kernel command line handling covers the expected stage1 controls: `root=`,
 `init=`, `resume=`, `boot.shell_on_fail`, `boot.panic_on_fail`,
@@ -97,5 +98,6 @@ reimplementation for its own sake. The regular-file mount path is the clearest
 example: stage1 uses the kernel loop APIs directly instead of shelling out to
 `mount` and relying on util-linux loop handling.
 
-Device management is also explicit: udev and mdev share a common lifecycle in
-Rust, with backend-specific details contained inside their implementations.
+Device management is also explicit: udev, mdev, and mdevd share a common
+lifecycle in Rust, with backend-specific details contained inside their
+implementations.

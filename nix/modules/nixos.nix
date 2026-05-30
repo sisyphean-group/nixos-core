@@ -6,7 +6,7 @@ self: {
 }: let
   inherit (lib.modules) mkIf mkForce;
   inherit (lib.options) mkOption mkEnableOption mkPackageOption literalExpression;
-  inherit (lib.types) package lines str bool;
+  inherit (lib.types) package lines str bool enum;
   inherit (lib.strings) optionalString escapeShellArg concatStringsSep;
   inherit (lib.meta) getExe';
 
@@ -160,9 +160,18 @@ self: {
         export HOST_ID=${escapeShellArg config.networking.hostId}
       ''}
 
-      export DEVICE_MANAGER=udev
-      export UDEV_BINARY=${lib.escapeShellArg "${extra-utils}/bin/systemd-udevd"}
-      export UDEVADM_BINARY=${lib.escapeShellArg "${extra-utils}/bin/udevadm"}
+      export DEVICE_MANAGER=${escapeShellArg cfg.components.bootStage1.deviceManager}
+      ${optionalString (cfg.components.bootStage1.deviceManager == "udev") ''
+        export UDEV_BINARY=${lib.escapeShellArg "${extra-utils}/bin/systemd-udevd"}
+        export UDEVADM_BINARY=${lib.escapeShellArg "${extra-utils}/bin/udevadm"}
+      ''}
+      ${optionalString (cfg.components.bootStage1.deviceManager == "mdev") ''
+        export MDEV_BINARY=${lib.escapeShellArg "${extra-utils}/bin/mdev"}
+      ''}
+      ${optionalString (cfg.components.bootStage1.deviceManager == "mdevd") ''
+        export MDEVD_BINARY=${lib.escapeShellArg "${extra-utils}/bin/mdevd"}
+        export MDEVD_COLDPLUG_BINARY=${lib.escapeShellArg "${extra-utils}/bin/mdevd-coldplug"}
+      ''}
       export LINK_UNITS_DEST=/etc/systemd/network
 
       exec ${extra-utils}/bin/nixos-core stage-1-init
@@ -342,6 +351,22 @@ in {
           description = "The stage-1 init script package used as {file}`/init` inside the initrd.";
           readOnly = true; # we can't handle a modified package
         };
+
+        deviceManager = mkOption {
+          type = enum [
+            "udev"
+            "mdev"
+            "mdevd"
+          ];
+          default = "udev";
+          description = ''
+            Device manager backend used by nixos-core's stage-1 init.
+
+            `udev` matches the default NixOS scripted initrd behavior. `mdev`
+            selects BusyBox mdev, and `mdevd` selects skarnet mdevd with
+            synchronous coldplug support.
+          '';
+        };
       };
 
       bootStage2 = {
@@ -470,6 +495,10 @@ in {
     # With the systemd initrd stage-1 is handled by systemd; these don't apply.
     boot.initrd.extraUtilsCommands = mkIf cfg.components.extraUtilsCommand.enable ''
       copy_bin_and_libs ${getExe' cfg.package "nixos-core"}
+      ${optionalString (cfg.components.bootStage1.deviceManager == "mdevd") ''
+        copy_bin_and_libs ${getExe' pkgs.mdevd "mdevd"}
+        copy_bin_and_libs ${getExe' pkgs.mdevd "mdevd-coldplug"}
+      ''}
     '';
 
     system = {
